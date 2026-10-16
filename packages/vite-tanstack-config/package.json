@@ -1,0 +1,48 @@
+{
+  "name": "@seemodo.ai/vite-tanstack-config",
+  "version": "1.0.0",
+  "description": "One-call Vite config for Seemodo TanStack Start apps (TanStack Start, React, Tailwind, tsconfig paths, Nitro for Cloudflare Workers, sandbox dev server).",
+  "license": "MIT",
+  "author": "Seemodo",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "LICENSE"
+  ],
+  "keywords": [
+    "vite",
+    "tanstack-start",
+    "seemodo",
+    "nitro",
+    "cloudflare-workers"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "peerDependencies": {
+    "@tailwindcss/vite": ">=4.0.0",
+    "@tanstack/react-start": ">=1.130.0",
+    "@vitejs/plugin-react": ">=5.0.0",
+    "nitro": ">=3.0.0-0",
+    "vite": ">=7.0.0",
+    "vite-tsconfig-paths": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "nitro": {
+      "optional": true
+    },
+    "vite-tsconfig-paths": {
+      "optional": true
+    }
+  }
+}

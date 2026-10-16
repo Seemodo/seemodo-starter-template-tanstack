@@ -1,7 +1,7 @@
 {
-  "name": "@seemodo.ai/vite-tanstack-config",
+  "name": "@seemodo/vite-tanstack-config",
   "version": "1.0.0",
-  "description": "One-call Vite config for Seemodo TanStack Start apps (TanStack Start, React, Tailwind, tsconfig paths, Nitro for Cloudflare Workers, sandbox dev server).",
+  "description": "One-call Vite config for Seemodo TanStack Start apps: TanStack Start, React, Tailwind, tsconfig paths, Nitro for Cloudflare Workers, sandbox dev server with HMR gate, error collector and build diagnostics.",
   "license": "MIT",
   "author": "Seemodo",
   "type": "module",
@@ -12,19 +12,48 @@
       "types": "./index.d.ts",
       "default": "./index.js"
     },
+    "./hmr-gate": {
+      "types": "./hmr-gate.d.ts",
+      "default": "./hmr-gate.js"
+    },
+    "./dev-server-bridge": {
+      "types": "./dev-server-bridge.d.ts",
+      "default": "./dev-server-bridge.js"
+    },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "hmr-gate": [
+        "./hmr-gate.d.ts"
+      ],
+      "dev-server-bridge": [
+        "./dev-server-bridge.d.ts"
+      ]
+    }
   },
   "files": [
     "index.js",
     "index.d.ts",
-    "LICENSE"
+    "hmr-gate.js",
+    "hmr-gate.d.ts",
+    "dev-server-bridge.js",
+    "dev-server-bridge.d.ts",
+    "lib/*.js",
+    "client/*.js",
+    "LICENSE",
+    "README.md"
   ],
+  "scripts": {
+    "test": "vitest run"
+  },
   "keywords": [
     "vite",
     "tanstack-start",
     "seemodo",
     "nitro",
-    "cloudflare-workers"
+    "cloudflare-workers",
+    "hmr"
   ],
   "engines": {
     "node": ">=20.19.0"
@@ -33,7 +62,7 @@
     "@tailwindcss/vite": ">=4.0.0",
     "@tanstack/react-start": ">=1.130.0",
     "@vitejs/plugin-react": ">=5.0.0",
-    "nitro": ">=3.0.0-0",
+    "nitro": ">=3.0.260603-beta",
     "vite": ">=7.0.0",
     "vite-tsconfig-paths": ">=5.0.0"
   },
@@ -44,5 +73,17 @@
     "vite-tsconfig-paths": {
       "optional": true
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Seemodo/seemodo-starter-template-tanstack.git",
+    "directory": "packages/vite-tanstack-config"
+  },
+  "homepage": "https://github.com/Seemodo/seemodo-starter-template-tanstack/tree/main/packages/vite-tanstack-config",
+  "bugs": {
+    "url": "https://github.com/Seemodo/seemodo-starter-template-tanstack/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -60,7 +60,7 @@
       },
       "devDependencies": {
         "@eslint/js": "^9.32.0",
-        "@seemodo.ai/vite-tanstack-config": "file:./packages/vite-tanstack-config",
+        "@seemodo/vite-tanstack-config": "^1.0.0",
         "@testing-library/jest-dom": "^6.6.0",
         "@testing-library/react": "^16.0.0",
         "@types/node": "^22.16.5",
@@ -337,7 +337,7 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-rc.3", "", {}, "sha512-eybk3TjzzzV97Dlj5c+XrBFW57eTNhzod66y9HrBlzJ6NsCrWCp/2kaPS3K9wJmurBC0Tdw4yPjXKZqlznim3Q=="],
 
-    "@seemodo.ai/vite-tanstack-config": ["@seemodo.ai/vite-tanstack-config@file:packages/vite-tanstack-config", { "peerDependencies": { "@tailwindcss/vite": ">=4.0.0", "@tanstack/react-start": ">=1.130.0", "@vitejs/plugin-react": ">=5.0.0", "nitro": ">=3.0.0-0", "vite": ">=7.0.0", "vite-tsconfig-paths": ">=5.0.0" }, "optionalPeers": ["nitro"] }],
+    "@seemodo/vite-tanstack-config": ["@seemodo/vite-tanstack-config@1.0.0", "", { "peerDependencies": { "@tailwindcss/vite": ">=4.0.0", "@tanstack/react-start": ">=1.130.0", "@vitejs/plugin-react": ">=5.0.0", "nitro": ">=3.0.260603-beta", "vite": ">=7.0.0", "vite-tsconfig-paths": ">=5.0.0" }, "optionalPeers": ["nitro", "vite-tsconfig-paths"] }, "sha512-wRcu3p6IFG5dOmYqCqbxINAHfZNt1FExvXqGGuygp5JXnGo3A9hKqY1CF7iD+NAsYuWslVFvEEJ98EHY0YqNhQ=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 

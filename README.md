@@ -64,10 +64,16 @@ platform.
 
 ## Vite config
 
-`vite.config.ts` is a single `defineConfig()` call from `@seemodo.ai/vite-tanstack-config`
-(source in `packages/vite-tanstack-config`). It adds TanStack Start, React, Tailwind,
-tsconfig paths, the `@/` alias, React/TanStack dedupe, the dev server settings, error
-logging and Nitro for builds. Extra Vite settings go into `defineConfig({ vite: { ... } })`.
+`vite.config.ts` is a single `defineConfig()` call from `@seemodo/vite-tanstack-config`
+(installed from npm; source in `packages/vite-tanstack-config`). It adds
+TanStack Start, React, Tailwind, tsconfig paths, the `@/` alias, React/TanStack dedupe, the dev
+server settings, error logging and Nitro for builds. Extra Vite settings go into
+`defineConfig({ vite: { ... } })`.
+
+Inside a Seemodo sandbox it also turns on the HMR gate (`/__seemodo/hmr-gate`), the browser error
+collector (`.seemodo/dev-errors.jsonl`), preview execution and machine-readable build reports. See
+[packages/vite-tanstack-config/README.md](packages/vite-tanstack-config/README.md) for all options,
+endpoints and environment variables.
 
 ## Built with
 

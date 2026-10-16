@@ -1,4 +1,4 @@
-// @seemodo.ai/vite-tanstack-config
+// @seemodo/vite-tanstack-config
 //
 // One-call Vite config for Seemodo TanStack Start apps. Plain ESM JavaScript on
 // purpose: Vite loads config dependencies straight from node_modules, so this
@@ -6,17 +6,54 @@
 //
 // Copyright (c) 2026 Seemodo. MIT License.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { mergeConfig, version as viteVersion } from "vite";
+import { loadEnv, mergeConfig, version as viteVersion } from "vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+import { assetsProxyPlugin } from "./lib/assets-proxy.js";
+import { buildReportPlugin } from "./lib/diagnostics.js";
+import {
+  resolveNitro,
+  serverDirCandidates,
+  trackNitroOutput,
+  wranglerConfigFixPlugin,
+} from "./lib/nitro.js";
+import {
+  isPrerenderEnabled,
+  isPrerenderPreview,
+  prepareSandboxPrerender,
+  prerenderServerPlugin,
+} from "./lib/prerender.js";
+import { errorLoggerPlugin } from "./lib/report.js";
+import { isSeemodoSandbox, warn } from "./lib/sandbox.js";
+import { buildExitWatchdogPlugin, resolveBuildExitWatchdog } from "./lib/watchdog.js";
+
+export { isSeemodoSandbox } from "./lib/sandbox.js";
+export { ERROR_PREFIX, onErrorReport, reportError } from "./lib/report.js";
+export {
+  BUILD_EXIT_REPORT_MARKER,
+  BUILD_REPORT_MARKER,
+  PRERENDER_REPORT_MARKER,
+  buildReportPlugin,
+  compactDiagnostic,
+} from "./lib/diagnostics.js";
+export {
+  DEFAULT_COMPATIBILITY_DATE,
+  DEFAULT_NITRO_PRESET,
+  NODEJS_COMPAT_IMPLIED_FROM,
+  fixWranglerConfigFile,
+  resolveNitro,
+  withoutImpliedCompatFlags,
+  wranglerConfigFixPlugin,
+} from "./lib/nitro.js";
+export { isPrerenderEnabled } from "./lib/prerender.js";
+export { buildExitWatchdogPlugin, resolveBuildExitWatchdog } from "./lib/watchdog.js";
+export { assetsProxyPlugin, resolveAssetsProxy } from "./lib/assets-proxy.js";
+
 export const DEFAULT_PORT = 5173;
-export const DEFAULT_NITRO_PRESET = "cloudflare-module";
-export const DEFAULT_COMPATIBILITY_DATE = "2025-09-01";
-export const ERROR_PREFIX = "[seemodo:error]";
 
 const DEDUPE = ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"];
 
@@ -29,17 +66,31 @@ const WATCH_IGNORED = [
   "**/.vinxi/**",
   "**/.tanstack/**",
   "**/.wrangler/**",
+  "**/.seemodo/**",
 ];
 
-/**
- * True inside a Seemodo sandbox (Modal / Boat), where the dev server sits
- * behind an HTTPS proxy and the browser must reach HMR over wss on port 443.
- */
-export function isSeemodoSandbox(env = process.env) {
-  const flag = (env.SEEMODO_SANDBOX ?? "").toLowerCase();
-  if (flag === "1" || flag === "true" || flag === "yes") return true;
-  return typeof env.SANDBOX_APP_DIR === "string" && env.SANDBOX_APP_DIR.length > 0;
-}
+// Directories written by tools in the sandbox, never by the app.
+const SANDBOX_WATCH_IGNORED = ["**/.claude/**", "**/.agents/**", "**/.workspace/**"];
+
+/** Every option key `defineConfig` understands; anything else is treated as Vite config. */
+export const OPTION_KEYS = Object.freeze([
+  "tanstackStart",
+  "react",
+  "nitro",
+  "tailwind",
+  "tsconfigPaths",
+  "errorLogger",
+  "editorBridge",
+  "envDefine",
+  "hmrGate",
+  "devServerBridge",
+  "buildDiagnostics",
+  "buildExitWatchdog",
+  "fixWranglerConfig",
+  "assetsProxy",
+  "plugins",
+  "vite",
+]);
 
 function resolvePort(env = process.env) {
   const parsed = Number.parseInt(env.PORT ?? "", 10);
@@ -47,145 +98,7 @@ function resolvePort(env = process.env) {
 }
 
 // ---------------------------------------------------------------------------
-// Error logging
-// ---------------------------------------------------------------------------
-
-const MAX_FIELD = 8000;
-
-function clip(value) {
-  if (typeof value !== "string") return value;
-  return value.length > MAX_FIELD ? `${value.slice(0, MAX_FIELD)}…` : value;
-}
-
-function stripAnsi(value) {
-  return typeof value === "string" ? value.replace(/\u001b\[[0-9;]*m/g, "") : value;
-}
-
-function describe(error) {
-  if (error instanceof Error) {
-    const loc = error.loc ?? undefined;
-    return {
-      name: error.name,
-      message: stripAnsi(error.message),
-      stack: stripAnsi(error.stack),
-      file: error.id ?? error.file ?? loc?.file,
-      line: loc?.line,
-      column: loc?.column,
-      plugin: error.plugin,
-      frame: stripAnsi(error.frame),
-    };
-  }
-  if (typeof error === "string") return { message: stripAnsi(error) };
-  try {
-    return { message: JSON.stringify(error) };
-  } catch {
-    return { message: String(error) };
-  }
-}
-
-/**
- * Writes one line to stderr: `[seemodo:error] {"source":...,"message":...}`.
- * The payload is single-line JSON so the sandbox control server can parse it.
- */
-let reportCount = 0;
-
-export function reportError(source, error, extra = {}) {
-  reportCount += 1;
-  const payload = { source, ...describe(error), ...extra, time: new Date().toISOString() };
-  for (const key of Object.keys(payload)) {
-    if (payload[key] === undefined || payload[key] === null || payload[key] === "") {
-      delete payload[key];
-    } else {
-      payload[key] = clip(payload[key]);
-    }
-  }
-  try {
-    process.stderr.write(`${ERROR_PREFIX} ${JSON.stringify(payload)}\n`);
-  } catch {
-    // stderr closed: nothing useful left to do
-  }
-}
-
-function errorLoggerPlugin() {
-  let processHooksInstalled = false;
-  // Most recent string-only console.error output, so a 5xx can be reported
-  // with its cause (the template's error-capture expands Errors to strings).
-  let lastConsoleError;
-
-  return {
-    name: "seemodo:error-logger",
-
-    configureServer(server) {
-      // 1. Everything Vite itself logs as an error (transform, pre-transform,
-      //    dependency optimizer, HMR update failures, config reload, ...).
-      const logger = server.config.logger;
-      const originalLoggerError = logger.error.bind(logger);
-      logger.error = (msg, options) => {
-        reportError("vite", options?.error ?? msg);
-        originalLoggerError(msg, options);
-      };
-
-      // 2. SSR render failures that reach TanStack Start's dev middleware: it
-      //    always calls ssrFixStacktrace(e) before rendering the error overlay.
-      const originalFix = server.ssrFixStacktrace.bind(server);
-      server.ssrFixStacktrace = (error) => {
-        originalFix(error);
-        reportError("ssr", error);
-      };
-
-      // 3. console.error: Error objects (route generator, plugins, server code)
-      //    are reported right away; plain strings are kept as context for a 5xx.
-      const originalConsoleError = console.error;
-      console.error = (...args) => {
-        const error = args.find((a) => a instanceof Error);
-        if (error) {
-          reportError("console", error);
-        } else if (args.length > 0) {
-          lastConsoleError = { message: args.map(String).join(" "), at: Date.now() };
-        }
-        originalConsoleError.apply(console, args);
-      };
-
-      // 4. Any 5xx answered by the dev server (pages and server functions),
-      //    unless the failure was already reported while handling the request.
-      server.middlewares.use((req, res, next) => {
-        const url = req.originalUrl ?? req.url;
-        const countAtStart = reportCount;
-        res.on("finish", () => {
-          if (res.statusCode < 500) return;
-          const recent =
-            lastConsoleError && Date.now() - lastConsoleError.at < 5000
-              ? lastConsoleError
-              : undefined;
-          lastConsoleError = undefined;
-          if (reportCount !== countAtStart) return;
-          reportError(
-            url?.includes("/_serverFn/") ? "server-fn" : "http",
-            recent?.message ?? `HTTP ${res.statusCode}`,
-            { method: req.method, url, status: res.statusCode },
-          );
-        });
-        next();
-      });
-
-      // 5. Stray failures in server code. The exception monitor never changes
-      //    Node's crash behavior; the rejection handler keeps the dev server
-      //    alive and logs instead of exiting.
-      if (!processHooksInstalled) {
-        processHooksInstalled = true;
-        process.on("uncaughtExceptionMonitor", (error) => reportError("process", error));
-        process.on("unhandledRejection", (reason) => reportError("process", reason));
-      }
-    },
-
-    buildEnd(error) {
-      if (error) reportError("build", error, { environment: this.environment?.name });
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Editor bridge (dev only)
+// Editor bridge fallback (dev only)
 // ---------------------------------------------------------------------------
 
 // Serve an empty script when the sandbox has not written public/seemodo.js, so
@@ -210,70 +123,61 @@ function editorBridgeFallbackPlugin() {
 }
 
 // ---------------------------------------------------------------------------
+// Option normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Turns whatever was passed to `defineConfig` into the options object.
+ * Accepts the options object, a plain Vite config object, a Vite config
+ * function, or a promise of a Vite config.
+ */
+export async function normalizeInput(input, configEnv) {
+  if (input === undefined || input === null) return {};
+  if (typeof input === "function") return { vite: (await input(configEnv)) ?? {} };
+  if (typeof input.then === "function") return { vite: (await input) ?? {} };
+  if (typeof input !== "object")
+    throw new TypeError("defineConfig expects an object or a function");
+
+  const options = {};
+  const viteExtras = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (OPTION_KEYS.includes(key)) options[key] = value;
+    else viteExtras[key] = value;
+  }
+  if (Object.keys(viteExtras).length > 0) {
+    options.vite = options.vite ? mergeConfig(viteExtras, options.vite) : viteExtras;
+  }
+  return options;
+}
+
+/** `envDefine`: defines `import.meta.env.VITE_*` from .env files and the build environment. */
+export function envDefines(mode, root, prefixes = "VITE_") {
+  const loaded = loadEnv(mode, root, prefixes);
+  const define = {};
+  for (const [key, value] of Object.entries(loaded)) {
+    define[`import.meta.env.${key}`] = JSON.stringify(value);
+  }
+  return define;
+}
+
+// ---------------------------------------------------------------------------
 // defineConfig
 // ---------------------------------------------------------------------------
 
-async function loadNitro(options) {
+async function loadNitro(required) {
   try {
     const mod = await import("nitro/vite");
     return mod.nitro;
   } catch (error) {
-    if (options.nitro !== undefined) {
+    if (required) {
       throw new Error(
-        `[seemodo] "nitro" is required for this build but could not be loaded. Install it with \`bun add -d nitro\`.`,
+        '[seemodo] "nitro" is required for this build but could not be loaded. Install it with `bun add -d nitro`.',
         { cause: error },
       );
     }
-    console.warn('[seemodo] "nitro" is not installed; building without a deploy target.');
+    warn('"nitro" is not installed; building without a deploy target.');
     return undefined;
   }
-}
-
-// Cloudflare worker names: lowercase letters, digits and dashes, at most 63
-// characters. Nitro's own fallback (git remote or package name plus the path
-// below the detected workspace) can exceed that, so pin it to the package name
-// unless the app brings its own wrangler config.
-function defaultWorkerName(root) {
-  if (
-    ["wrangler.json", "wrangler.jsonc", "wrangler.toml"].some((f) => existsSync(path.join(root, f)))
-  ) {
-    return undefined;
-  }
-  try {
-    const { name } = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-    if (typeof name !== "string") return undefined;
-    const clean = name
-      .toLowerCase()
-      .replace(/^@[^/]+\//, "")
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 63)
-      .replace(/-+$/, "");
-    return clean || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function nitroConfig(options, env, root) {
-  const user = options.nitro && typeof options.nitro === "object" ? options.nitro : {};
-  const preset =
-    user.preset ?? env.SEEMODO_NITRO_PRESET ?? env.NITRO_PRESET ?? DEFAULT_NITRO_PRESET;
-  const config = {
-    compatibilityDate: DEFAULT_COMPATIBILITY_DATE,
-    ...user,
-    preset,
-  };
-  if (preset.startsWith("cloudflare") && !user.cloudflare?.wrangler?.name) {
-    const name = defaultWorkerName(root);
-    if (name) {
-      config.cloudflare = {
-        ...user.cloudflare,
-        wrangler: { ...user.cloudflare?.wrangler, name },
-      };
-    }
-  }
-  return config;
 }
 
 // Vite 8 resolves tsconfig `paths` natively (and warns when vite-tsconfig-paths
@@ -289,36 +193,94 @@ async function tsconfigPathsSetup(mode) {
   return { plugins: [tsconfigPaths()], resolve: {} };
 }
 
+function optionObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
 /**
- * @param {import("./index.d.ts").SeemodoTanstackOptions} [options]
+ * Builds the Vite config. Use as `export default defineConfig({ ... })` in vite.config.ts.
+ * @param {import("./index.d.ts").SeemodoTanstackOptions | import("vite").UserConfigExport} [input]
  */
-export function defineConfig(options = {}) {
+export function defineConfig(input = {}) {
   return async (configEnv) => {
+    const options = await normalizeInput(input, configEnv);
     const env = process.env;
     const isBuild = configEnv.command === "build";
     const isPreview = Boolean(configEnv.isPreview);
     const isDev = configEnv.command === "serve" && !isPreview;
+    const prerenderPass = isPrerenderPreview(configEnv, env);
     const sandbox = isSeemodoSandbox(env);
     const root = path.resolve(options.vite?.root ?? process.cwd());
 
     const paths = await tsconfigPathsSetup(options.tsconfigPaths ?? "auto");
     const plugins = [...paths.plugins];
     if (options.tailwind !== false) plugins.push(tailwindcss());
-    plugins.push(tanstackStart(options.tanstackStart ?? {}));
+
+    // TanStack Start (+ prerender handling)
+    let startOptions = options.tanstackStart ?? {};
+    let prerenderReporter;
+    if (isBuild && sandbox && isPrerenderEnabled(startOptions)) {
+      const prepared = prepareSandboxPrerender(startOptions);
+      startOptions = prepared.options;
+      prerenderReporter = prepared.reporter;
+    }
+    plugins.push(tanstackStart(startOptions));
+    // After TanStack Start's own post-build hook, which runs the prerender pass.
+    if (prerenderReporter) plugins.push(prerenderReporter);
     plugins.push(viteReact(options.react ?? {}));
 
-    if ((isBuild || isPreview) && options.nitro !== false) {
-      const nitro = await loadNitro(options);
-      if (nitro) plugins.push(nitro(nitroConfig(options, env, root)));
+    // Nitro: builds and `vite preview`, never in dev. During TanStack Start's
+    // prerender pass the adapter in lib/prerender.js serves pages instead.
+    const nitroPlan = resolveNitro({ option: options.nitro, sandbox, env, root });
+    if (nitroPlan.enabled && (isBuild || isPreview)) {
+      if (prerenderPass) {
+        plugins.push(prerenderServerPlugin(() => serverDirCandidates(nitroPlan.config)));
+      } else {
+        const nitro = await loadNitro(nitroPlan.required);
+        if (nitro) {
+          const seen = trackNitroOutput(nitroPlan.config);
+          plugins.push(nitro(nitroPlan.config));
+          if (isBuild && options.fixWranglerConfig !== false) {
+            plugins.push(wranglerConfigFixPlugin(nitroPlan.config, seen));
+          }
+        }
+      }
     }
 
     if (options.errorLogger !== false) plugins.push(errorLoggerPlugin());
-    if (isDev && options.editorBridge !== false) plugins.push(editorBridgeFallbackPlugin());
+
+    if (isBuild && (options.buildDiagnostics ?? sandbox)) plugins.push(buildReportPlugin());
+
+    let watchdog;
+    if (isBuild && sandbox && options.buildExitWatchdog !== false) {
+      const resolved = resolveBuildExitWatchdog(options.buildExitWatchdog, env);
+      if (resolved.enabled) watchdog = buildExitWatchdogPlugin(resolved);
+    }
+
+    if (isDev) {
+      if (options.editorBridge !== false) plugins.push(editorBridgeFallbackPlugin());
+      const gate = options.hmrGate;
+      if (sandbox ? gate !== false : Boolean(gate)) {
+        const { hmrGatePlugin } = await import("./hmr-gate.js");
+        plugins.push(hmrGatePlugin(optionObject(gate)));
+      }
+      const bridge = options.devServerBridge;
+      if (sandbox ? bridge !== false : Boolean(bridge)) {
+        const { devServerBridgePlugin } = await import("./dev-server-bridge.js");
+        plugins.push(devServerBridgePlugin(optionObject(bridge)));
+      }
+      if (options.assetsProxy !== false) plugins.push(assetsProxyPlugin(env));
+    }
+
     if (options.plugins) plugins.push(...options.plugins);
 
     /** @type {import("vite").UserConfig} */
     const base = {
       plugins,
+      define:
+        options.envDefine === false
+          ? {}
+          : envDefines(configEnv.mode, root, options.vite?.envPrefix ?? "VITE_"),
       resolve: {
         alias: [{ find: /^@\//, replacement: `${path.join(root, "src")}/` }],
         dedupe: DEDUPE,
@@ -330,7 +292,7 @@ export function defineConfig(options = {}) {
         strictPort: true,
         allowedHosts: true,
         ...(sandbox && { hmr: { clientPort: 443, protocol: "wss" } }),
-        watch: { ignored: WATCH_IGNORED },
+        watch: { ignored: sandbox ? [...WATCH_IGNORED, ...SANDBOX_WATCH_IGNORED] : WATCH_IGNORED },
       },
       preview: {
         host: "0.0.0.0",
@@ -338,7 +300,10 @@ export function defineConfig(options = {}) {
       },
     };
 
-    return options.vite ? mergeConfig(base, options.vite) : base;
+    let config = options.vite ? mergeConfig(base, options.vite) : base;
+    // The watchdog must stay the very last plugin so its timer starts after every other build hook.
+    if (watchdog) config = { ...config, plugins: [...(config.plugins ?? []), watchdog] };
+    return config;
   };
 }
 

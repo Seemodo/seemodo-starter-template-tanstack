@@ -1,6 +1,6 @@
 [install]
 saveTextLockfile = true
 # 24h supply-chain guard: skip package versions published less than a day ago.
-# Local file: dependencies (packages/*) are not fetched from the registry and
-# are therefore not subject to this guard.
+# Seemodo's own packages are excluded so new releases can be used right away.
 minimumReleaseAge = 86400
+minimumReleaseAgeExcludes = ["@seemodo/vite-tanstack-config"]

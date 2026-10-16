@@ -73,7 +73,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
-    "@seemodo.ai/vite-tanstack-config": "file:./packages/vite-tanstack-config",
+    "@seemodo/vite-tanstack-config": "^1.0.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.16.5",

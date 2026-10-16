@@ -20,10 +20,13 @@ TypeScript, Tailwind CSS 4, shadcn/ui, Vite 8. Builds to Cloudflare Workers.
 
 ## Config and commands
 
-- `vite.config.ts` is one `defineConfig()` call from `@seemodo.ai/vite-tanstack-config`
-  (`packages/vite-tanstack-config`). It already adds TanStack Start, React, Tailwind,
+- `vite.config.ts` is one `defineConfig()` call from `@seemodo/vite-tanstack-config`
+  (installed from npm, source in `packages/vite-tanstack-config`). It already adds TanStack Start, React, Tailwind,
   tsconfig paths, Nitro and the dev server settings. Do not add those plugins again; use
   `defineConfig({ vite: { ... } })` or `plugins: [...]` for extras.
+- Dev server errors (server and browser) are logged as `[seemodo:error] {json}` lines; browser
+  errors are also collected in `.seemodo/dev-errors.jsonl`. Paths under `/__seemodo/` belong to
+  the dev server; do not create routes there.
 - `bun run dev` (port 5173), `bun run build` (output in `.output/`: `public/` static
   assets, `server/index.mjs` Worker, `server/wrangler.json`), `bun run typecheck`,
   `bun run lint`, `bun run test`.
